@@ -7,6 +7,7 @@ It provides endpoints for the complete interview flow:
 
 import json
 import logging
+import os
 import time
 import uuid
 from typing import Optional
@@ -36,6 +37,11 @@ from open_webui.utils.wenqu_engine.question_engine import (
     generate_follow_up_question,
 )
 from open_webui.utils.wenqu_engine.feedback_engine import generate_feedback
+from open_webui.utils.wenqu_engine.deepseek_client import DeepSeekClient
+from open_webui.models.wenqu import create_wenqu_tables
+
+# Ensure database tables exist on module load
+create_wenqu_tables()
 
 log = logging.getLogger(__name__)
 
@@ -44,21 +50,38 @@ router = APIRouter()
 # Maximum interview rounds
 MAX_ROUNDS = 5
 
-# Placeholder for LLM call — will be wired to Open WebUI's model system
-async def _default_llm(prompt: str, system_prompt: Optional[str] = None) -> str:
-    """Default LLM stub. Replace with actual Open WebUI model call."""
-    log.warning("Using stub LLM — wire to actual model inference for production use")
-    return '{"question": "请详细解释你的核心方法？", "question_type": "principle", "evaluation": "", "depth_score": 5}'
+# DeepSeek client (lazily initialized)
+_deepseek_client: Optional[DeepSeekClient] = None
 
 
-# Global config: set this to a real LLM caller during app init
-wenqu_llm_callback = _default_llm
+def _get_deepseek_client() -> Optional[DeepSeekClient]:
+    """Get or create the DeepSeek client from env vars."""
+    global _deepseek_client
+    if _deepseek_client is not None:
+        return _deepseek_client
+
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
+        log.warning("DEEPSEEK_API_KEY not set — wenqu LLM calls will return stub responses")
+        return None
+
+    model = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+    _deepseek_client = DeepSeekClient(api_key=api_key, model=model)
+    log.info(f"DeepSeek client initialized with model: {model}")
+    return _deepseek_client
 
 
-def set_llm_callback(callback):
-    """Set the LLM callback used by Wenqu engine."""
-    global wenqu_llm_callback
-    wenqu_llm_callback = callback
+async def wenqu_llm_callback(prompt: str, system_prompt: Optional[str] = None) -> str:
+    """LLM callback used by all wenqu engine modules.
+
+    Falls back to DeepSeek stub if no API key configured.
+    """
+    client = _get_deepseek_client()
+    if client is None:
+        log.warning("Using stub LLM — set DEEPSEEK_API_KEY in .env for real responses")
+        return '{"question": "请详细解释你的核心方法？", "question_type": "principle", "evaluation": "", "depth_score": 5}'
+
+    return await client.chat_completion(prompt, system_prompt=system_prompt)
 
 
 ############################
@@ -79,12 +102,43 @@ async def api_parse_resume(
     form_data: dict,
     user=Depends(get_verified_user),
 ):
-    """Parse resume text and extract structured project data."""
-    resume_text = form_data.get("resume_text", "")
-    if not resume_text:
-        raise HTTPException(status_code=400, detail="resume_text is required")
+    """Parse resume and extract structured project data.
 
-    parsed = await parse_resume(resume_text, wenqu_llm_callback)
+    Accepts either:
+    - resume_text: raw text content
+    - file_id: ID of a file uploaded to liya-ai's file system
+    """
+    resume_text = form_data.get("resume_text", "")
+
+    # If file_id is provided, extract text from the uploaded PDF
+    file_id = form_data.get("file_id", "")
+    if file_id:
+        try:
+            from open_webui.models.files import Files
+            from open_webui.internal.db import get_async_session
+
+            async for db in get_async_session():
+                file = await Files.get_file_by_id(file_id, db=db)
+                if file and file.path:
+                    import fitz  # PyMuPDF
+                    import asyncio
+                    from open_webui.storage.provider import Storage
+
+                    file_path = await asyncio.to_thread(Storage.get_file, file.path)
+                    doc = fitz.open(file_path)
+                    resume_text = ""
+                    for page in doc:
+                        resume_text += page.get_text()
+                    doc.close()
+                    break
+        except Exception as e:
+            log.warning(f"Failed to extract text from PDF file {file_id}: {e}")
+            # Fall through to use whatever resume_text we have
+
+    if not resume_text:
+        raise HTTPException(status_code=400, detail="Could not extract resume text from the provided file")
+
+    parsed = await parse_resume(resume_text[:8000], wenqu_llm_callback)
     return ResumeUploadResponse(**parsed)
 
 

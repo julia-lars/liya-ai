@@ -82,10 +82,13 @@ export interface WenquSession {
 }
 
 /** Parse resume text and extract structured project information. */
-export const parseResume = async (token: string, resumeText: string): Promise<ParsedResume> => {
+export const parseResume = async (
+    token: string,
+    params: { resume_text?: string; file_id?: string }
+): Promise<ParsedResume> => {
     return fetchWithAuth(token, `${WENQU_BASE}/parse-resume`, {
         method: 'POST',
-        body: JSON.stringify({ resume_text: resumeText })
+        body: JSON.stringify(params)
     });
 };
 

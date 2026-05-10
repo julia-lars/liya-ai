@@ -1,3 +1,13 @@
+"""Wenqu data models — Interview sessions, rounds, and feedback reports.
+
+This module is original code, independent of the Open WebUI fork.
+
+Contains SQLAlchemy models and CRUD operations for:
+- WenquSession: one complete mock interview
+- WenquRound: one Q&A turn within a session
+- WenquFeedbackReport: final assessment report
+"""
+
 import logging
 import time
 import uuid
@@ -14,7 +24,6 @@ log = logging.getLogger(__name__)
 
 ####################
 # Wenqu Session
-# 问渠面试会话：一次完整的模拟面试
 ####################
 
 
@@ -58,7 +67,6 @@ class WenquSessionForm(BaseModel):
 
 ####################
 # Wenqu Round
-# 单轮问答：一个追问 + 一个回答 + 评估
 ####################
 
 
@@ -106,7 +114,6 @@ class WenquAnswerForm(BaseModel):
 
 ####################
 # Wenqu Feedback Report
-# 面试结束后的综合反馈报告
 ####################
 
 
@@ -147,7 +154,25 @@ class WenquFeedbackReportModel(BaseModel):
 
 
 ####################
-# DB Operations
+# Table auto-creation
+####################
+
+WENQU_TABLES = [WenquSession.__table__, WenquRound.__table__, WenquFeedbackReport.__table__]
+
+
+def create_wenqu_tables():
+    """Create wenqu tables in the database if they don't exist.
+
+    Safe to call multiple times — SQLAlchemy create_all is idempotent.
+    """
+    from open_webui.internal.db import engine
+
+    Base.metadata.create_all(bind=engine, tables=WENQU_TABLES)
+    log.info("Wenqu tables verified/created")
+
+
+####################
+# CRUD Operations
 ####################
 
 

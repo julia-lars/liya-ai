@@ -43,10 +43,9 @@
       if (!uploadRes.ok) throw new Error('文件上传失败');
       const fileData = await uploadRes.json();
 
-      // Step 2: Parse resume using Wenqu engine
-      // For now, we send the file content. In production, the backend reads the file.
+      // Step 2: Parse resume using Wenqu engine (backend extracts text from PDF)
       isParsing = true;
-      const parseResult = await parseResume($user.token, fileData.id);
+      const parseResult = await parseResume($user.token, { file_id: fileData.id });
 
       if (!parseResult.projects || parseResult.projects.length === 0) {
         throw new Error('未能从简历中提取到科研项目，请确认简历内容');
