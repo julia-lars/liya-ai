@@ -29,6 +29,20 @@
   let interviewComplete = false;
   let feedbackReport: any = null;
   let isGeneratingFeedback = false;
+  let scrollContainer: HTMLDivElement;
+
+  function scrollToBottom() {
+    if (scrollContainer) {
+      setTimeout(() => {
+        scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+      }, 50);
+    }
+  }
+
+  // Auto-scroll after each render that adds content
+  $: if (previousRounds.length || currentRound || interviewComplete || feedbackReport) {
+    scrollToBottom();
+  }
 
   onMount(async () => {
     if (!sessionId || !$user) {
@@ -118,7 +132,7 @@
   }
 </script>
 
-<div class="max-w-3xl mx-auto">
+<div bind:this={scrollContainer} class="max-w-3xl mx-auto">
   {#if isLoading}
     <div class="text-center py-12">
       <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>

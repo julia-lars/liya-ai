@@ -8,9 +8,9 @@
   onMount(() => { mounted = true; });
 </script>
 
-<div class="wenqu-layout min-h-screen bg-gray-50 dark:bg-gray-900">
+<div class="wenqu-layout h-screen max-h-[100dvh] flex flex-col bg-gray-50 dark:bg-gray-900">
   <!-- Top navigation -->
-  <nav class="sticky top-0 z-40 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+  <nav class="shrink-0 sticky top-0 z-40 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
     <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-4">
         <a href="/wenqu" class="text-lg font-semibold text-gray-900 dark:text-white hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
@@ -28,8 +28,10 @@
     </div>
   </nav>
 
-  <!-- Page content -->
-  <main class="max-w-5xl mx-auto px-4 py-8">
-    <slot />
+  <!-- Page content — scrollable area -->
+  <main class="flex-1 overflow-y-auto">
+    <div class="max-w-5xl mx-auto px-4 py-8">
+      <slot />
+    </div>
   </main>
 </div>
