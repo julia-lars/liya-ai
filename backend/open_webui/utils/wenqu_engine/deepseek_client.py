@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1"
 DEFAULT_MODEL = "deepseek-chat"
-DEFAULT_TIMEOUT = 60.0
+DEFAULT_TIMEOUT = 180.0
 
 
 class DeepSeekClient:
@@ -38,7 +38,7 @@ class DeepSeekClient:
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 2048,
+        max_tokens: int = 4096,
     ) -> str:
         """Send a chat completion request to DeepSeek.
 

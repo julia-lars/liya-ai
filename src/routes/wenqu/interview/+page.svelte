@@ -96,6 +96,9 @@
       if (result.interview_complete) {
         interviewComplete = true;
         currentRound = null;
+        // Fetch all rounds so display shows correct count
+        const allRounds = await getRounds($user.token, sessionId);
+        previousRounds = allRounds;
       } else {
         // Add previous round to history
         const oldRound = await getRounds($user.token, sessionId);

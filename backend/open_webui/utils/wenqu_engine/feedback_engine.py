@@ -97,14 +97,14 @@ async def generate_feedback(
     return _empty_report()
 
 
-def _empty_report() -> dict:
+def _empty_report(reason: str = "面试记录不足") -> dict:
     return {
         "academic_score": 0,
         "expression_score": 0,
         "authenticity_score": 0,
-        "risk_flags": ["无法生成评估——面试记录不足"],
-        "improvement_suggestions": ["请完成至少一轮面试问答"],
-        "full_report": "面试记录不足，无法生成完整反馈报告。",
+        "risk_flags": [f"无法生成评估——{reason}"],
+        "improvement_suggestions": ["请完成至少一轮面试问答或检查模型API是否正常工作"],
+        "full_report": f"无法生成完整反馈报告：{reason}。\n\n可能的原因为：API超时、模型返回格式异常、或面试记录不完整。",
     }
 
 
