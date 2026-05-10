@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { user } from '$lib/stores';
@@ -33,6 +33,69 @@
   let canEarlyEnd = false;
   let isEnding = false;
   let scrollContainer: HTMLDivElement;
+
+  // ── Timing ──
+  let questionShownAt: number | null = null;
+  let startedAnsweringAt: number | null = null;
+  let liveNow = Date.now();
+  let liveTimer: ReturnType<typeof setInterval> | null = null;
+
+  // Per-round timing for history display
+  interface RoundTiming {
+    thinkSec: number;
+    answerSec: number;
+  }
+  let roundTimings: Record<string, RoundTiming> = {};
+
+  $: thinkSec = questionShownAt
+    ? Math.floor(((startedAnsweringAt ?? liveNow) - questionShownAt) / 1000)
+    : 0;
+  $: answerSec = startedAnsweringAt
+    ? Math.floor((liveNow - startedAnsweringAt) / 1000)
+    : 0;
+
+  function formatTime(sec: number): string {
+    if (sec < 60) return `${sec}秒`;
+    return `${Math.floor(sec / 60)}分${sec % 60}秒`;
+  }
+
+  function startLiveTimer() {
+    liveTimer = setInterval(() => { liveNow = Date.now(); }, 1000);
+  }
+
+  function stopLiveTimer() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+  }
+
+  function recordQuestionShown(roundId: string) {
+    questionShownAt = Date.now();
+    startedAnsweringAt = null;
+    startLiveTimer();
+  }
+
+  function recordFirstKeypress() {
+    if (startedAnsweringAt === null && questionShownAt !== null) {
+      startedAnsweringAt = Date.now();
+    }
+  }
+
+  function recordSubmit(roundId: string) {
+    if (questionShownAt) {
+      const now = Date.now();
+      const think = startedAnsweringAt
+        ? Math.floor((startedAnsweringAt - questionShownAt) / 1000)
+        : Math.floor((now - questionShownAt) / 1000);
+      const ans = startedAnsweringAt
+        ? Math.floor((now - startedAnsweringAt) / 1000)
+        : 0;
+      roundTimings[roundId] = { thinkSec: think, answerSec: ans };
+    }
+    stopLiveTimer();
+    questionShownAt = null;
+    startedAnsweringAt = null;
+  }
+
+  onDestroy(() => { stopLiveTimer(); });
 
   function scrollToBottom() {
     if (scrollContainer) {
@@ -71,6 +134,7 @@
         const last = rounds[rounds.length - 1];
         if (last.answer === null) {
           currentRound = last;
+          recordQuestionShown(last.id);
         } else {
           currentRound = last;
           interviewComplete = true;
@@ -79,6 +143,7 @@
         // Start fresh interview
         const result = await startInterview($user.token, sessionId);
         currentRound = result.round;
+        recordQuestionShown(result.round.id);
       }
     } catch (e: any) {
       error = e.message || '加载面试失败';
@@ -90,6 +155,8 @@
   async function handleSubmit() {
     if (!answerText.trim() || !currentRound || !$user) return;
 
+    // Record timing before submitting
+    recordSubmit(currentRound.id);
     isSubmitting = true;
     error = '';
 
@@ -107,6 +174,7 @@
         const oldRound = await getRounds($user.token, sessionId);
         previousRounds = oldRound.slice(0, -1);
         currentRound = result.round;
+        recordQuestionShown(result.round.id);
         canEarlyEnd = result.can_early_end ?? false;
       }
 
@@ -133,6 +201,7 @@
 
   async function handleEarlyEnd() {
     if (!$user || isEnding) return;
+    if (currentRound) recordSubmit(currentRound.id);
     isEnding = true;
     error = '';
     try {
@@ -247,7 +316,14 @@
           <div class="flex items-start gap-3">
             <span class="text-xs font-mono text-gray-400 dark:text-gray-500 mt-1">Q{i + 1}</span>
             <div class="flex-1">
-              <p class="text-sm text-gray-800 dark:text-gray-200 mb-2">{round.question}</p>
+              <div class="flex items-center justify-between mb-1">
+                <p class="text-sm text-gray-800 dark:text-gray-200">{round.question}</p>
+                {#if roundTimings[round.id]}
+                  <span class="text-xs text-gray-400 dark:text-gray-500 shrink-0 ml-2">
+                    🤔 {formatTime(roundTimings[round.id].thinkSec)} · ✍️ {formatTime(roundTimings[round.id].answerSec)}
+                  </span>
+                {/if}
+              </div>
               {#if round.answer}
                 <p class="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 rounded p-2">
                   {round.answer}
@@ -280,7 +356,14 @@
       <!-- Previous rounds -->
       {#each previousRounds as round, i}
         <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-3">
-          <p class="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">导师提问 #{i + 1}</p>
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-xs font-medium text-blue-600 dark:text-blue-400">导师提问 #{i + 1}</p>
+            {#if roundTimings[round.id]}
+              <p class="text-xs text-gray-400 dark:text-gray-500">
+                🤔 {formatTime(roundTimings[round.id].thinkSec)} · ✍️ {formatTime(roundTimings[round.id].answerSec)}
+              </p>
+            {/if}
+          </div>
           <p class="text-sm text-gray-800 dark:text-gray-200 mb-2">{round.question}</p>
           <p class="text-xs font-medium text-green-600 dark:text-green-400 mb-1">你的回答</p>
           <p class="text-sm text-gray-500 dark:text-gray-400">{round.answer}</p>
@@ -290,12 +373,17 @@
       <!-- Current question -->
       {#if currentRound}
         <div class="bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-          <p class="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">导师提问 #{previousRounds.length + 1}</p>
+          <div class="flex items-center justify-between mb-1">
+            <p class="text-xs font-medium text-blue-600 dark:text-blue-400">导师提问 #{previousRounds.length + 1}</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500">
+              🤔 {formatTime(thinkSec)} · ✍️ {formatTime(answerSec)}
+            </p>
+          </div>
           <p class="text-sm text-gray-800 dark:text-gray-200 mb-4">{currentRound.question}</p>
 
           <textarea
             bind:value={answerText}
-            on:keydown={handleSubmitOnEnter}
+            on:keydown={(e) => { recordFirstKeypress(); handleSubmitOnEnter(e); }}
             placeholder="输入你的回答..."
             rows="4"
             class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
