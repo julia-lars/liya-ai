@@ -320,3 +320,14 @@ class WenquFeedbackReportTable:
             if report:
                 return WenquFeedbackReportModel.model_validate(report)
             return None
+
+    @staticmethod
+    async def delete_by_session(session_id: str) -> None:
+        """Delete all feedback reports for a session."""
+        async with get_async_db_context() as db:
+            await db.execute(
+                delete(WenquFeedbackReport).where(
+                    WenquFeedbackReport.session_id == session_id
+                )
+            )
+            await db.commit()

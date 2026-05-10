@@ -7,35 +7,23 @@ from typing import Optional
 log = logging.getLogger(__name__)
 
 
-FEEDBACK_PROMPT = """你是一位严格的计算机系博士生导师。请根据以下模拟面试记录，生成一份完整的反馈报告。
+FEEDBACK_PROMPT = """你是一位严格的计算机系博士生导师。请根据以下模拟面试的评估摘要，生成一份完整的反馈报告。
 
 项目：{project_title}
 项目描述：{project_description}
 
-面试记录（共 {total_rounds} 轮）：
+面试共 {total_rounds} 轮，每轮评估摘要：
 {interview_log}
 
 请从以下维度评估：
 
 1. **学术深度** (Academic Depth, 1-10)
-   - 学生是否真正理解核心原理？
-   - 是否能清晰解释技术选型理由？
-   - 对Baseline和实验设计的理解程度？
-
 2. **表达清晰度** (Expression Clarity, 1-10)
-   - 回答是否结构清晰、逻辑自洽？
-   - 学术用语是否规范？
-   - 是否回避问题或答非所问？
-
 3. **真实性风险** (Authenticity Risk, 1-10, 越高越可疑)
-   - 是否存在夸大或编造成分？
-   - 技术描述是否consistent？
-   - 个人贡献的描述是否可信？
-
-4. **漏洞分析** — 列出你在对话中发现的具体漏洞
+4. **漏洞分析** — 列出你从问答中发现的具体漏洞
 5. **改进建议** — 针对每个漏洞给出可执行的改进方案
 
-以JSON格式返回：
+以JSON格式返回（不要包含无关内容，只返回JSON）：
 {{
   "academic_score": 1-10,
   "expression_score": 1-10,
@@ -68,12 +56,9 @@ async def generate_feedback(
     if not rounds:
         return _empty_report()
 
-    interview_log = "\n\n".join(
+    interview_log = "\n".join(
         [
-            f"第 {r['round_number']} 轮\n"
-            f"导师问：{r.get('question', '')}\n"
-            f"学生答：{r.get('answer', '（未回答）')}\n"
-            f"评估：{r.get('evaluation', '')}"
+            f"第{r['round_number']}轮(类型:{r.get('question_type','?')},深度分:{r.get('depth_score','?')}) 评估: {r.get('evaluation', '')} 学生回答摘要: {(r.get('answer','') or '')[:200]}"
             for r in rounds
         ]
     )
@@ -87,10 +72,12 @@ async def generate_feedback(
 
     try:
         response = await llm_callback(prompt)
+        log.warning(f"Raw feedback response (first 500 chars): {response[:500]}")
         result = _extract_json(response)
 
         if result and "academic_score" in result:
             return result
+        log.warning(f"Feedback JSON parse failed or missing academic_score. Raw response length: {len(response)}. Parsed result: {result}")
     except Exception as e:
         log.error(f"Feedback generation failed: {e}")
 

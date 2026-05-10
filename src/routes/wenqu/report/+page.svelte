@@ -10,6 +10,7 @@
   let rounds: InterviewRound[] = [];
   let projectTitle = '';
   let isLoading = true;
+  let isRegenerating = false;
   let error = '';
 
   onMount(async () => {
@@ -111,6 +112,29 @@
           <div class="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
             {report.full_report}
           </div>
+        </div>
+      {/if}
+
+      <!-- Regenerate button -->
+      {#if report.academic_score === 0 && report.expression_score === 0}
+        <div class="mt-4 text-center">
+          <button
+            on:click={async () => {
+              isRegenerating = true;
+              try {
+                const result = await generateFeedback($user.token, sessionId, true);
+                report = result.report;
+              } catch (e: any) {
+                error = e.message || '重新生成失败';
+              } finally {
+                isRegenerating = false;
+              }
+            }}
+            disabled={isRegenerating}
+            class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {isRegenerating ? '生成中...' : '重新生成报告'}
+          </button>
         </div>
       {/if}
     </div>

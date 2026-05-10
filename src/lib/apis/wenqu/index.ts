@@ -172,9 +172,11 @@ export const getRounds = async (
 /** Generate feedback report for a completed session. */
 export const generateFeedback = async (
     token: string,
-    sessionId: string
+    sessionId: string,
+    force: boolean = false
 ): Promise<{ report: FeedbackReport }> => {
-    return fetchWithAuth(token, `${WENQU_BASE}/sessions/${sessionId}/feedback`, {
+    const params = force ? '?force=true' : '';
+    return fetchWithAuth(token, `${WENQU_BASE}/sessions/${sessionId}/feedback${params}`, {
         method: 'POST'
     });
 };

@@ -397,9 +397,15 @@ async def api_get_rounds(
 @router.post("/sessions/{session_id}/feedback")
 async def api_generate_feedback(
     session_id: str,
+    request: Request,
     user=Depends(get_verified_user),
 ):
-    """Generate feedback report for a completed interview session."""
+    """Generate feedback report for a completed interview session.
+
+    Query param ?force=true to bypass cache and regenerate.
+    """
+    force = request.query_params.get("force", "").lower() == "true"
+
     session = await WenquSessionTable.get_by_id(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -408,10 +414,13 @@ async def api_generate_feedback(
     if not rounds:
         raise HTTPException(status_code=400, detail="No interview rounds found")
 
-    # Check if report already exists
+    # Check if report already exists (skip if force=true)
     existing = await WenquFeedbackReportTable.get_by_session(session_id)
-    if existing:
+    if existing and not force:
         return {"report": WenquFeedbackReportModel.model_validate(existing)}
+    elif existing and force:
+        await WenquFeedbackReportTable.delete_by_session(session_id)
+        log.info(f"Deleted cached feedback report for session {session_id} (force=true)")
 
     # Prepare round data for feedback generation
     round_data = [
