@@ -143,10 +143,21 @@ export const submitAnswer = async (
     round: InterviewRound;
     next_question: string | null;
     interview_complete: boolean;
+    can_early_end?: boolean;
 }> => {
     return fetchWithAuth(token, `${WENQU_BASE}/sessions/${sessionId}/answer`, {
         method: 'POST',
         body: JSON.stringify({ answer })
+    });
+};
+
+/** End the interview early (after minimum 3 rounds). */
+export const completeInterview = async (
+    token: string,
+    sessionId: string
+): Promise<{ rounds_count: number; session_id: string }> => {
+    return fetchWithAuth(token, `${WENQU_BASE}/sessions/${sessionId}/complete`, {
+        method: 'POST'
     });
 };
 

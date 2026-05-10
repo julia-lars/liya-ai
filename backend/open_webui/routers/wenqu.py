@@ -348,6 +348,34 @@ async def api_submit_answer(
         "round": WenquRoundModel.model_validate(next_round),
         "next_question": next_round.question,
         "interview_complete": False,
+        "can_early_end": next_round_number >= 3,
+    }
+
+
+############################
+# Early End
+############################
+
+
+@router.post("/sessions/{session_id}/complete")
+async def api_complete_interview(
+    session_id: str,
+    user=Depends(get_verified_user),
+):
+    """Manually end the interview early (after minimum 3 rounds)."""
+    session = await WenquSessionTable.get_by_id(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    rounds = await WenquRoundTable.get_by_session(session_id)
+    if len(rounds) < 3:
+        raise HTTPException(status_code=400, detail="至少完成 3 轮问答后才能提前结束")
+
+    await WenquSessionTable.update_status(session_id, "completed")
+
+    return {
+        "rounds_count": len(rounds),
+        "session_id": session_id,
     }
 
 

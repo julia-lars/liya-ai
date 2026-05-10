@@ -10,6 +10,7 @@
     submitAnswer,
     getRounds,
     generateFeedback,
+    completeInterview,
     type InterviewRound
   } from '$lib/apis/wenqu';
 
@@ -29,6 +30,8 @@
   let interviewComplete = false;
   let feedbackReport: any = null;
   let isGeneratingFeedback = false;
+  let canEarlyEnd = false;
+  let isEnding = false;
   let scrollContainer: HTMLDivElement;
 
   function scrollToBottom() {
@@ -104,6 +107,7 @@
         const oldRound = await getRounds($user.token, sessionId);
         previousRounds = oldRound.slice(0, -1);
         currentRound = result.round;
+        canEarlyEnd = result.can_early_end ?? false;
       }
 
       answerText = '';
@@ -124,6 +128,23 @@
       error = e.message || '生成报告失败';
     } finally {
       isGeneratingFeedback = false;
+    }
+  }
+
+  async function handleEarlyEnd() {
+    if (!$user || isEnding) return;
+    isEnding = true;
+    error = '';
+    try {
+      await completeInterview($user.token, sessionId);
+      interviewComplete = true;
+      currentRound = null;
+      const allRounds = await getRounds($user.token, sessionId);
+      previousRounds = allRounds;
+    } catch (e: any) {
+      error = e.message || '结束面试失败';
+    } finally {
+      isEnding = false;
     }
   }
 
@@ -219,7 +240,7 @@
     <!-- Interview complete -->
     <div class="text-center py-8">
       <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-2">面试完成</h2>
-      <p class="text-gray-500 dark:text-gray-400 mb-6">共进行了 {previousRounds.length + 1} 轮追问</p>
+      <p class="text-gray-500 dark:text-gray-400 mb-6">共进行了 {previousRounds.length} 轮追问</p>
 
       {#each previousRounds as round, i}
         <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-3 text-left">
@@ -282,13 +303,24 @@
 
           <div class="flex items-center justify-between mt-3">
             <span class="text-xs text-gray-400 dark:text-gray-500">Enter 发送 · Shift+Enter 换行</span>
-            <button
-              on:click={handleSubmit}
-              disabled={isSubmitting || !answerText.trim()}
-              class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isSubmitting ? '提交中...' : '提交回答'}
-            </button>
+            <div class="flex items-center gap-2">
+              {#if canEarlyEnd}
+                <button
+                  on:click={handleEarlyEnd}
+                  disabled={isEnding}
+                  class="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isEnding ? '结束中...' : '结束面试'}
+                </button>
+              {/if}
+              <button
+                on:click={handleSubmit}
+                disabled={isSubmitting || !answerText.trim()}
+                class="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {isSubmitting ? '提交中...' : '提交回答'}
+              </button>
+            </div>
           </div>
         </div>
       {/if}
