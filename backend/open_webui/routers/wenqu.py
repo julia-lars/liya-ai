@@ -139,7 +139,14 @@ async def api_parse_resume(
         raise HTTPException(status_code=400, detail="Could not extract resume text from the provided file")
 
     parsed = await parse_resume(resume_text[:8000], wenqu_llm_callback)
-    return ResumeUploadResponse(**parsed)
+    # Normalize to ensure all expected fields exist and are lists
+    normalized = {
+        "projects": parsed.get("projects") or [],
+        "publications": parsed.get("publications") or [],
+        "skills": parsed.get("skills") or [],
+        "competitions": parsed.get("competitions") or [],
+    }
+    return ResumeUploadResponse(**normalized)
 
 
 class ProjectSelectResponse(BaseModel):

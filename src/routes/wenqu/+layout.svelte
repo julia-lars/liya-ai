@@ -22,9 +22,6 @@
       <div class="flex items-center gap-3 text-sm">
         <a href="/wenqu/history" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">历史记录</a>
         <a href="/wenqu/upload" class="text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">开始面试</a>
-        {#if $user}
-          <a href="/" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">返回聊天</a>
-        {/if}
       </div>
     </div>
   </nav>

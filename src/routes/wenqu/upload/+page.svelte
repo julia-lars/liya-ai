@@ -8,12 +8,12 @@
   let resumeFile: File | null = null;
   let isUploading = false;
   let isParsing = false;
+  let isCreatingSession = false;
   let error = '';
-  let step: 'upload' | 'parsing' | 'selecting' | 'ready' = 'upload';
+  let step: 'upload' | 'parsing' | 'selecting' | 'choose' = 'upload';
   let parsed: any = null;
-  let selectedProject: any = null;
   let scoredProjects: any[] = [];
-  let sessionId = '';
+  let selectedProject: any = null;
 
   async function handleFileSelected(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -43,7 +43,7 @@
       if (!uploadRes.ok) throw new Error('文件上传失败');
       const fileData = await uploadRes.json();
 
-      // Step 2: Parse resume using Wenqu engine (backend extracts text from PDF)
+      // Step 2: Parse resume
       isParsing = true;
       const parseResult = await parseResume($user.token, { file_id: fileData.id });
 
@@ -53,21 +53,13 @@
 
       parsed = parseResult;
 
-      // Step 3: Select target project
+      // Step 3: Score all projects
       step = 'selecting';
       const selectResult = await selectProject($user.token, parsed.projects);
-      selectedProject = selectResult.selected_project;
       scoredProjects = selectResult.all_scored;
 
-      // Step 4: Create session
-      const sessionResult = await createSession($user.token, {
-        resume_text: `file_id:${fileData.id}`,
-        project_title: selectedProject.title,
-        project_description: selectedProject.description || ''
-      });
-
-      sessionId = sessionResult.session.id;
-      step = 'ready';
+      // Step 4: Show top 3 for user to choose
+      step = 'choose';
     } catch (e: any) {
       error = e.message || '处理失败，请重试';
       step = 'upload';
@@ -77,9 +69,22 @@
     }
   }
 
-  function startInterview() {
-    if (!sessionId) return;
-    goto(`/wenqu/interview?session=${sessionId}`);
+  async function handleProjectPick(project: any) {
+    if (!$user || isCreatingSession) return;
+    isCreatingSession = true;
+    error = '';
+
+    try {
+      const sessionResult = await createSession($user.token, {
+        resume_text: '',
+        project_title: project.title,
+        project_description: project.description || ''
+      });
+      goto(`/wenqu/interview?session=${sessionResult.session.id}`);
+    } catch (e: any) {
+      error = e.message || '创建面试失败';
+      isCreatingSession = false;
+    }
   }
 </script>
 
@@ -101,15 +106,6 @@
       </label>
     </div>
 
-    <!-- Text fallback -->
-    <div class="mt-4 text-center">
-      <button
-        on:click={() => goto('/wenqu/interview')}
-        class="text-sm text-blue-600 dark:text-blue-400 hover:underline"
-      >
-        跳过上传，直接开始面试
-      </button>
-    </div>
   {/if}
 
   <!-- Parsing progress -->
@@ -121,7 +117,7 @@
     </div>
   {/if}
 
-  <!-- Selecting progress -->
+  <!-- Scoring progress -->
   {#if step === 'selecting'}
     <div class="text-center py-12">
       <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -130,41 +126,68 @@
     </div>
   {/if}
 
-  <!-- Ready — show parsed results -->
-  {#if step === 'ready' && selectedProject}
+  <!-- Choose project — top 3 highlighted -->
+  {#if step === 'choose'}
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-      <h2 class="font-semibold text-gray-900 dark:text-white mb-3">已锁定高风险项目</h2>
+      <h2 class="font-semibold text-gray-900 dark:text-white mb-1">选择模拟面试项目</h2>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+        共提取 {parsed?.projects?.length ?? 0} 个科研项目，以下为风险评分最高的 3 个项目（越容易被导师深挖）
+      </p>
 
-      <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-4">
-        <p class="font-medium text-red-800 dark:text-red-200">{selectedProject.title}</p>
-        <p class="text-sm text-red-600 dark:text-red-300 mt-1">{selectedProject.description}</p>
-      </div>
-
-      <div class="mb-4">
-        <p class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">所有项目风险评分：</p>
-        <div class="space-y-2">
-          {#each scoredProjects as sp}
-            <div class="flex items-center justify-between text-sm bg-gray-50 dark:bg-gray-700/50 rounded px-3 py-2">
-              <span class="text-gray-700 dark:text-gray-300">{sp.title}</span>
-              <span class="font-mono {sp.risk_score >= 7 ? 'text-red-600' : sp.risk_score >= 4 ? 'text-yellow-600' : 'text-green-600'}">
+      <!-- Top 3 pickers -->
+      <div class="space-y-3 mb-6">
+        {#each scoredProjects.slice(0, 3) as sp, i}
+          <button
+            on:click={() => handleProjectPick(sp)}
+            disabled={isCreatingSession}
+            class="w-full text-left bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 rounded-lg p-4 transition-colors disabled:opacity-50"
+          >
+            <div class="flex items-start justify-between">
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-xs font-mono font-bold text-white bg-blue-600 rounded-full w-5 h-5 flex items-center justify-center shrink-0">
+                    {i + 1}
+                  </span>
+                  <span class="font-medium text-gray-900 dark:text-white truncate">{sp.title}</span>
+                </div>
+                {#if sp.reason}
+                  <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 mt-1">{sp.reason}</p>
+                {/if}
+              </div>
+              <span class="font-mono text-lg font-bold shrink-0 ml-3 {sp.risk_score >= 7 ? 'text-red-500' : sp.risk_score >= 4 ? 'text-yellow-500' : 'text-green-500'}">
                 {sp.risk_score}/10
               </span>
             </div>
-          {/each}
-        </div>
+          </button>
+        {/each}
       </div>
 
-      <!-- Extract projects count -->
-      <p class="text-xs text-gray-400 dark:text-gray-500 mb-4">
-        共提取 {parsed?.projects?.length ?? 0} 个科研项目
-      </p>
+      <!-- Other projects (collapsed) -->
+      {#if scoredProjects.length > 3}
+        <details class="mb-4">
+          <summary class="text-sm text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-700 dark:hover:text-gray-200">
+            其他 {scoredProjects.length - 3} 个项目
+          </summary>
+          <div class="mt-2 space-y-1">
+            {#each scoredProjects.slice(3) as sp}
+              <button
+                on:click={() => handleProjectPick(sp)}
+                disabled={isCreatingSession}
+                class="w-full text-left flex items-center justify-between px-3 py-2 text-sm bg-gray-50 dark:bg-gray-700/50 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              >
+                <span class="text-gray-700 dark:text-gray-300 truncate">{sp.title}</span>
+                <span class="font-mono shrink-0 ml-2 {sp.risk_score >= 7 ? 'text-red-500' : sp.risk_score >= 4 ? 'text-yellow-500' : 'text-green-500'}">
+                  {sp.risk_score}/10
+                </span>
+              </button>
+            {/each}
+          </div>
+        </details>
+      {/if}
 
-      <button
-        on:click={startInterview}
-        class="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-      >
-        开始面试 — {selectedProject.title}
-      </button>
+      {#if isCreatingSession}
+        <div class="text-center text-sm text-gray-400 dark:text-gray-500">创建面试中...</div>
+      {/if}
     </div>
   {/if}
 
