@@ -13,6 +13,7 @@
     completeInterview,
     type InterviewRound
   } from '$lib/apis/wenqu';
+  import { transcribeAudio } from '$lib/apis/audio';
 
   // Parse session ID from URL
   $: sessionId = $page.url.searchParams.get('session') || '';
@@ -33,6 +34,68 @@
   let canEarlyEnd = false;
   let isEnding = false;
   let scrollContainer: HTMLDivElement;
+
+  // ── Voice Input ──
+  let isRecording = false;
+  let isTranscribing = false;
+  let mediaRecorder: MediaRecorder | null = null;
+  let audioChunks: Blob[] = [];
+
+  async function toggleRecording() {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        // Stop all tracks
+        stream.getTracks().forEach(t => t.stop());
+
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        if (blob.size < 1000) return; // too short, ignore
+
+        isTranscribing = true;
+        try {
+          const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
+          const result = await transcribeAudio($user?.token || '', file);
+          const text = result?.text || result?.content || '';
+          if (text) {
+            // Record first keypress for timing if not already started
+            recordFirstKeypress();
+            answerText = (answerText ? answerText + '\n' : '') + text;
+          }
+        } catch (e) {
+          console.error('Transcription failed:', e);
+        } finally {
+          isTranscribing = false;
+        }
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+    } catch (e) {
+      console.error('Mic access denied:', e);
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+    }
+    isRecording = false;
+  }
 
   // ── Timing ──
   let questionShownAt: number | null = null;
@@ -95,7 +158,14 @@
     startedAnsweringAt = null;
   }
 
-  onDestroy(() => { stopLiveTimer(); });
+  onDestroy(() => {
+    stopLiveTimer();
+    // Clean up any active recording
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stream?.getTracks().forEach(t => t.stop());
+      mediaRecorder.stop();
+    }
+  });
 
   function scrollToBottom() {
     if (scrollContainer) {
@@ -392,6 +462,25 @@
           <div class="flex items-center justify-between mt-3">
             <span class="text-xs text-gray-400 dark:text-gray-500">Enter 发送 · Shift+Enter 换行</span>
             <div class="flex items-center gap-2">
+              <!-- Voice input -->
+              <button
+                on:click={toggleRecording}
+                disabled={isTranscribing}
+                class="px-3 py-2 border rounded-lg text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed {isRecording ? 'bg-red-50 border-red-300 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-700 dark:text-red-400' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}"
+                title={isRecording ? '点击停止录音' : '点击开始语音输入'}
+              >
+                {#if isTranscribing}
+                  <svg class="animate-spin size-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                {:else}
+                  <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                  </svg>
+                {/if}
+              </button>
+
               {#if canEarlyEnd}
                 <button
                   on:click={handleEarlyEnd}
